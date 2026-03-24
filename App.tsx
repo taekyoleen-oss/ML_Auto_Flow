@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useRef,
 } from "react";
+import { buildSlideReport } from "./utils/buildSlideReport";
 import { Toolbox } from "./components/Toolbox";
 import { Canvas } from "./components/Canvas";
 import { PropertiesPanel } from "./components/PropertiesPanel";
@@ -1960,171 +1961,35 @@ Please analyze this dataset comprehensively and design an optimal pipeline.
     }
 
     setIsGeneratingPPTs(true);
-    setPptProgress({
-      status: "generating",
-      message: "PPT 생성 준비 중...",
-    });
-    addLog("INFO", "모듈별 PPT 생성 중...");
+    setPptProgress({ status: "generating", message: "PPT 생성 중..." });
+    addLog("INFO", "PPT 보고서 생성 중...");
 
     try {
-      // 진행 상태 업데이트
+      setPptProgress({ status: "generating", message: "슬라이드 빌드 중...", details: "pptxgenjs로 클라이언트에서 직접 생성합니다." });
+      await buildSlideReport(modules, connections, projectName);
+
+      const analysisCount = modules.filter(
+        (m) => m.type !== "TextBox" && m.type !== "GroupBox"
+      ).length;
+      addLog("SUCCESS", `PPT 보고서가 생성되었습니다. (${analysisCount}개 모듈)`);
+      addLog("INFO", "다운로드 폴더에 저장되었습니다.");
+
       setPptProgress({
-        status: "generating",
-        message: "프로젝트 데이터 준비 중...",
+        status: "success",
+        message: `PPT 파일이 생성되었습니다! (${analysisCount}개 모듈)`,
+        details: "다운로드 폴더에 저장되었습니다.",
       });
 
-      const projectData = {
-        modules,
-        connections,
-        projectName,
-      };
-
-      // 진행 상태 업데이트
-      setPptProgress({
-        status: "generating",
-        message: "서버에 요청 전송 중...",
-      });
-
-      const response = await fetch("/api/generate-ppts", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ projectData }),
-      });
-
-      // 진행 상태 업데이트
-      setPptProgress({
-        status: "generating",
-        message: "PPT 파일 생성 중...",
-        details: "모듈별 슬라이드를 생성하고 있습니다.",
-      });
-
-      if (!response.ok) {
-        let errorMessage = "PPT 생성 실패";
-        let errorDetails = "";
-        try {
-          const responseText = await response.text();
-          console.error("서버 응답 텍스트:", responseText);
-
-          if (responseText) {
-            try {
-              const errorData = JSON.parse(responseText);
-              errorMessage = errorData.error || errorMessage;
-              errorDetails = errorData.details || errorData.stack || "";
-              console.error("서버 에러 상세:", errorData);
-            } catch (parseError) {
-              // JSON 파싱 실패 시 원본 텍스트 사용
-              errorMessage = `서버 오류 (${response.status}): ${response.statusText}`;
-              errorDetails = responseText;
-              console.error("JSON 파싱 실패, 원본 텍스트 사용:", parseError);
-            }
-          } else {
-            errorMessage = `서버 오류 (${response.status}): ${response.statusText}`;
-            console.error("서버가 빈 응답을 반환했습니다.");
-          }
-        } catch (e) {
-          errorMessage = `서버 오류 (${response.status}): ${response.statusText}`;
-          console.error("응답 읽기 실패:", e);
-        }
-        const fullErrorMessage = errorDetails
-          ? `${errorMessage}\n\n상세 정보:\n${errorDetails}`
-          : errorMessage;
-        throw new Error(fullErrorMessage);
-      }
-
-      const result = await response.json();
-
-      if (result.success) {
-        const fileCount = result.files?.length || 0;
-        const downloadPath = result.downloadPath || result.files?.[0]?.filepath;
-
-        // 완료 메시지 설정
-        let successMessage = `PPT 파일이 생성되었습니다!`;
-        let details = "";
-
-        if (fileCount > 0) {
-          successMessage = `PPT 파일이 생성되었습니다! (${fileCount}개 모듈 포함)`;
-
-          if (downloadPath) {
-            details = `저장 위치: ${downloadPath}`;
-            addLog(
-              "SUCCESS",
-              `PPT 파일이 생성되었습니다. (${fileCount}개 모듈 포함)`
-            );
-            addLog(
-              "SUCCESS",
-              `다운로드 폴더에 저장되었습니다: ${downloadPath}`
-            );
-          } else {
-            // stdout에서 경로 추출 시도
-            const pathMatch = result.message?.match(
-              /다운로드 폴더에 저장되었습니다:\s*(.+)/
-            );
-            if (pathMatch) {
-              details = `저장 위치: ${pathMatch[1]}`;
-              addLog(
-                "SUCCESS",
-                `PPT 파일이 생성되었습니다. (${fileCount}개 모듈 포함)`
-              );
-              addLog(
-                "SUCCESS",
-                `다운로드 폴더에 저장되었습니다: ${pathMatch[1]}`
-              );
-            } else {
-              details = "PC의 다운로드 폴더에 저장되었습니다.";
-              addLog(
-                "SUCCESS",
-                `PPT 파일이 생성되었습니다. (${fileCount}개 모듈 포함)`
-              );
-              addLog("INFO", "파일이 PC의 다운로드 폴더에 저장되었습니다.");
-            }
-          }
-        } else {
-          addLog("SUCCESS", "PPT 파일이 생성되었습니다.");
-        }
-
-        setPptProgress({
-          status: "success",
-          message: successMessage,
-          details: details,
-        });
-
-        // 3초 후 자동으로 닫기
-        setTimeout(() => {
-          setIsGeneratingPPTs(false);
-          setPptProgress({ status: "idle", message: "" });
-        }, 3000);
-      } else {
-        throw new Error(result.error || "PPT 생성 실패");
-      }
+      setTimeout(() => {
+        setIsGeneratingPPTs(false);
+        setPptProgress({ status: "idle", message: "" });
+      }, 3000);
     } catch (error: any) {
       console.error("PPT 생성 오류:", error);
       const errorMessage = error.message || "알 수 없는 오류";
+      setPptProgress({ status: "error", message: "PPT 생성 실패", details: errorMessage });
+      addLog("ERROR", `PPT 생성 실패: ${errorMessage}`);
 
-      // 서버 연결 오류인 경우 안내 메시지 추가
-      if (
-        errorMessage.includes("Failed to fetch") ||
-        errorMessage.includes("ECONNREFUSED")
-      ) {
-        const errorDetails =
-          "서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요. (http://localhost:3001)";
-        setPptProgress({
-          status: "error",
-          message: "PPT 생성 실패",
-          details: errorDetails,
-        });
-        addLog("ERROR", `PPT 생성 실패: ${errorDetails}`);
-      } else {
-        setPptProgress({
-          status: "error",
-          message: "PPT 생성 실패",
-          details: errorMessage,
-        });
-        addLog("ERROR", `PPT 생성 실패: ${errorMessage}`);
-      }
-
-      // 에러 메시지는 5초 후 자동으로 닫기
       setTimeout(() => {
         setIsGeneratingPPTs(false);
         setPptProgress({ status: "idle", message: "" });
